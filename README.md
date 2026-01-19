@@ -49,5 +49,5 @@ Si un fichero de configuración `.vbox` es irrecuperable o incompatible con la v
 3.  Ejecutar la herramienta:
 
 ```bash
-chmod +x Vbox-Portable-Manager.sh
-./Vbox-Portable-Manager.sh
+chmod +x Vbox_Portable_Manager.sh
+./Vbox_Portable_Manager.sh
