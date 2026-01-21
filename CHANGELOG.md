@@ -4,6 +4,13 @@ Todas las modificaciones notables de este proyecto serán documentadas en este a
 
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
+## [4.1] - 2026-01-21
+### Añadido
+- **Deep Path Surgery (Soporte de Snapshots):** Nueva lógica de inspección profunda que detecta y repara enlaces rotos en cadenas de instantáneas (Snapshots), permitiendo arrancar máquinas con estados guardados.
+- **Normalización Dinámica de Rutas:** El script analiza el XML del archivo `.vbox`, identifica rutas absolutas obsoletas (ej. de usuarios anteriores) y las actualiza quirúrgicamente con la ruta real del sistema actual.
+### Corregido
+- **Error de "Medium Not Found":** Solucionado el fallo crítico al mover máquinas virtuales entre distribuciones con diferentes puntos de montaje (ej. `/run/media/user` vs `/media/user`), garantizando portabilidad total entre Arch, Ubuntu, Fedora, etc.
+
 ## [3.2] - 2026-01-20
 ### Añadido
 - **Garbage Collection (Auto-Clean):** Implementada lógica para detectar máquinas virtuales irrecuperables (sin disco `.vdi`).

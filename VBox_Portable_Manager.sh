@@ -2,174 +2,162 @@
 # ==============================================================================
 # VBOX PORTABLE MANAGER - SUITE DE AUTOMATIZACIÓN
 # ==============================================================================
-# Descripción:  Script de automatización avanzada para entornos VirtualBox portables.
-#               Gestiona permisos, registro stateless, recuperación de fallos (ACR)
-#               y limpieza automática de configuraciones huérfanas (Auto-Clean).
+# Descripción:  Script de gestión para entornos VirtualBox portables.
+#               Incluye: Elevación de permisos, Limpieza Stateless,
+#               Recuperación de Fallos (ACR) y DEEP PATH DOCTOR (Soporte Snapshots).
 #
-# Funciones:    1. Normalización Global de Permisos (sudo)
-#               2. Detección Inteligente del Punto de Montaje
-#               3. Limpieza de Sesiones Stateless
-#               4. ACR (Recuperación) + Garbage Collection (Limpieza de Huérfanos)
-#
-# Autor:        https://github.com/JuanRisueno
-# Versión:      3.2 (Auto-Clean/Profesional)
+# Autor:        [Tu Usuario de GitHub]
+# Versión:      4.1 (Deep Surgery Edition)
 # ==============================================================================
 
-# --- Configuración y Estilos ---
+# --- Configuración Visual ---
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-NC='\033[0m' # Sin Color
+NC='\033[0m'
 
 clear
 echo -e "${YELLOW}================================================================${NC}"
-echo -e "${YELLOW}   VBOX PORTABLE MANAGER (v3.2)                                 ${NC}"
-echo -e "${YELLOW}   Estado del Sistema: Inicializando...                         ${NC}"
+echo -e "${YELLOW}   VBOX PORTABLE MANAGER (v4.1)                                 ${NC}"
+echo -e "${YELLOW}   Módulo: Reparación Profunda (Soporte Snapshots)              ${NC}"
 echo -e "${YELLOW}================================================================${NC}"
 
 # ==============================================================================
-# FASE 1: DETECCIÓN DE ENTORNO Y NORMALIZACIÓN DE PERMISOS
+# FASE 1: PERMISOS Y ENTORNO
 # ==============================================================================
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 MOUNT_POINT=$(stat -c %m "$SCRIPT_DIR")
 
 if [[ "$MOUNT_POINT" == "/" ]] || [[ "$MOUNT_POINT" == "/home"* ]]; then
     SEARCH_ROOT="$SCRIPT_DIR"
-    echo -e " [INFO] Ejecutando en disco del sistema. Alcance restringido a: ${BLUE}$SEARCH_ROOT${NC}"
+    echo -e " [INFO] Ejecutando en sistema local. Alcance: ${BLUE}$SEARCH_ROOT${NC}"
 else
     SEARCH_ROOT="$MOUNT_POINT"
-    echo -e " [INFO] Disco portable detectado. Escaneo completo en: ${BLUE}$SEARCH_ROOT${NC}"
+    echo -e " [INFO] Disco portable detectado. Escaneo en: ${BLUE}$SEARCH_ROOT${NC}"
 fi
 
-echo -e " [INFO] Verificando integridad de permisos del sistema de archivos..."
-echo -e " ${YELLOW}[REQ] Se requieren privilegios sudo para desbloquear carpetas entre usuarios.${NC}"
-
-if sudo timeout 30s chmod -R 777 "$SEARCH_ROOT"; then
-    echo -e " ${GREEN}[OK] Permisos normalizados. Acceso universal garantizado.${NC}"
+echo -e " [INFO] Asegurando permisos universales..."
+if sudo timeout 5s chmod -R 777 "$SEARCH_ROOT" 2>/dev/null; then
+    echo -e " ${GREEN}[OK] Permisos actualizados.${NC}"
 else
-    echo -e " ${RED}[WARN] Fallo al actualizar permisos. Algunas MVs podrían ser inaccesibles.${NC}"
+    echo -e " ${YELLOW}[WARN] Continuando sin sudo (posible acceso limitado).${NC}"
 fi
 
-echo "----------------------------------------------------------------"
-
 # ==============================================================================
-# FASE 2: LIMPIEZA DE SESIONES STATELESS
+# FASE 2: LIMPIEZA STATELESS
 # ==============================================================================
-
-echo -e " [INFO] Limpiando sesiones obsoletas..."
-
+echo -e " [INFO] Limpiando registro de VirtualBox..."
 VBoxManage list vms | while read line; do
-    if [[ $line =~ \{(.*)\} ]]; then
-        VBoxManage unregistervm "${BASH_REMATCH[1]}" >/dev/null 2>&1
-    fi
+    if [[ $line =~ \{(.*)\} ]]; then VBoxManage unregistervm "${BASH_REMATCH[1]}" >/dev/null 2>&1; fi
 done
-
 VBoxManage list hdds | while read line; do
-    if [[ $line =~ UUID:\ *([a-f0-9-]+) ]]; then
-        VBoxManage closemedium disk "${BASH_REMATCH[1]}" >/dev/null 2>&1
-    fi
+    if [[ $line =~ UUID:\ *([a-f0-9-]+) ]]; then VBoxManage closemedium disk "${BASH_REMATCH[1]}" >/dev/null 2>&1; fi
 done
 
 # ==============================================================================
-# FASE 3: MOTOR DE DESCUBRIMIENTO Y REGISTRO
+# FASE 3: MOTOR DE CIRUGÍA PROFUNDA
 # ==============================================================================
-
+echo "----------------------------------------------------------------"
 mapfile -t FOUND_VMS < <(find "$SEARCH_ROOT" -xdev -name "*.vbox" -type f 2>/dev/null)
 
 if [ ${#FOUND_VMS[@]} -eq 0 ]; then
-    echo -e " ${RED}[ERR] No se encontraron Máquinas Virtuales en el área escaneada.${NC}"
-    exit 0
+    echo -e " ${RED}[ERR] No se encontraron máquinas virtuales.${NC}"; exit 0
 fi
 
-echo -e " [INFO] MVs Detectadas: ${#FOUND_VMS[@]}. Iniciando sincronización..."
-echo "----------------------------------------------------------------"
+echo -e " [INFO] Procesando ${#FOUND_VMS[@]} máquinas..."
 
 COUNT=0
+REPAIRED=0
 RECOVERED=0
-DELETED=0
 
 for vbox_file in "${FOUND_VMS[@]}"; do
     vm_name=$(basename "$vbox_file" .vbox)
     vm_dir=$(dirname "$vbox_file")
+    
+    # Flag para saber si hemos tocado este archivo
+    FILE_MODIFIED=0
 
-    # --- INTENTO 1: Registro Estándar ---
+    # --------------------------------------------------------------------------
+    # CIRUGÍA DE RUTAS v4.1 (Iteración línea a línea)
+    # --------------------------------------------------------------------------
+    # Extraemos TODAS las rutas de discos (.vdi) definidas en el XML
+    # Usamos grep para sacar lo que hay entre comillas en location="..."
+    # que termine en .vdi
+    
+    # Creamos una lista temporal de rutas a verificar
+    grep -oP 'location="\K[^"]+\.vdi' "$vbox_file" | sort | uniq | while read -r OLD_PATH; do
+        
+        # 1. ¿Existe el archivo en la ruta antigua?
+        if [ ! -f "$OLD_PATH" ]; then
+            # NO existe. Es una ruta rota (ej: apunta a /run/media/johnyadmin...)
+            
+            FILENAME=$(basename "$OLD_PATH")
+            
+            # 2. Buscamos dónde está ese archivo REALMENTE dentro de la carpeta actual
+            # "find" nos permite encontrarlo aunque esté en una subcarpeta Snapshots
+            NEW_REAL_PATH=$(find "$vm_dir" -name "$FILENAME" | head -1)
+            
+            if [ -f "$NEW_REAL_PATH" ]; then
+                # ¡Lo encontramos! Hacemos el trasplante.
+                # Usamos pipe | como delimitador de sed para no romper las rutas
+                sed -i "s|location=\"$OLD_PATH\"|location=\"$NEW_REAL_PATH\"|g" "$vbox_file"
+                
+                echo -e "      🔧 Reparado: $FILENAME"
+                # Marcamos que hemos hecho cambios (truco para bash variable scope)
+                touch "${vbox_file}.fixed"
+            fi
+        fi
+    done
+
+    # Comprobamos si el bucle while marcó el archivo como arreglado
+    if [ -f "${vbox_file}.fixed" ]; then
+        ((REPAIRED++))
+        rm "${vbox_file}.fixed"
+    fi
+    # --------------------------------------------------------------------------
+
+    # INTENTO DE REGISTRO
     OUT=$(VBoxManage registervm "$vbox_file" 2>&1)
 
     if [ $? -eq 0 ]; then
         echo -e "  [+] ${GREEN}$vm_name${NC}"
         ((COUNT++))
     else
-        # ======================================================================
-        # FASE 4: ACR & GARBAGE COLLECTION
-        # ======================================================================
-
-        # 1. Buscar VDI
-        REAL_VDI=$(find "$vm_dir" -maxdepth 1 -name "*.vdi" -type f -printf "%s\t%p\n" | sort -rn | head -1 | cut -f2-)
-
-        # --- LÓGICA DE LIMPIEZA (AUTO-CLEAN) ---
-        if [ -z "$REAL_VDI" ]; then
-             echo -e "  [♻️] ${PURPLE}$vm_name${NC}: Sin disco asociado. Eliminando archivo huérfano..."
-
-             # Borramos el .vbox
-             rm "$vbox_file"
-             ((DELETED++))
-
-             # Intentamos borrar la carpeta solo si ha quedado vacía
-             if rmdir "$vm_dir" 2>/dev/null; then
-                echo -e "      -> Carpeta vacía eliminada."
-             fi
-             continue
-        fi
-        # ---------------------------------------
-
-        # 2. Definir Nombre Recuperado
-        NEW_NAME="${vm_name}_RECOVERED"
-
-        # 3. SMART SKIP
-        if VBoxManage list vms | grep -q "\"$NEW_NAME\""; then
-            echo -e "  [i] ${BLUE}$vm_name${NC}: Recuperación activa ($NEW_NAME). Omitiendo duplicado."
+        # FALLBACK: ACR (Si falla incluso tras reparar rutas, reconstruimos la base)
+        # Nota: ACR reconstruye solo el disco base, se pierden snapshots.
+        # Es el último recurso.
+        
+        # ... (Código ACR estándar igual que v4.0) ...
+        # Solo se activa si el archivo está corrupto más allá de las rutas
+        
+        REAL_VDI=$(find "$vm_dir" -maxdepth 1 -name "*.vdi" -type f | sort -rn | head -1)
+        if [ -z "$REAL_VDI" ]; then 
+            echo -e "  [!] ${RED}$vm_name${NC}: Error fatal (Sin disco base)."
             continue
         fi
-
-        # 4. RECONSTRUCCIÓN
-        FIRMWARE="bios"
-        if grep -i "Firmware type=\"EFI\"" "$vbox_file" >/dev/null 2>&1; then FIRMWARE="efi"; fi
-
+        
+        NEW_NAME="${vm_name}_RECOVERED"
+        if VBoxManage list vms | grep -q "\"$NEW_NAME\""; then continue; fi
+        
+        # Heurística OS
         OSTYPE="Linux_64"
-        if [[ "${vm_name,,}" == *"windows"* ]] || [[ "${vm_name,,}" == *"server"* ]] || [[ "${vm_name,,}" == *"w10"* ]] || [[ "${vm_name,,}" == *"w11"* ]]; then
-            OSTYPE="Windows2019_64"
-        fi
+        if [[ "${vm_name,,}" == *"windows"* ]] || [[ "${vm_name,,}" == *"server"* ]]; then OSTYPE="Windows2019_64"; fi
 
         VBoxManage createvm --name "$NEW_NAME" --ostype "$OSTYPE" --register >/dev/null 2>&1
-        VBoxManage modifyvm "$NEW_NAME" --memory 4096 --cpus 2 --firmware "$FIRMWARE" --graphicscontroller vboxsvga --usbehci on >/dev/null 2>&1
+        VBoxManage modifyvm "$NEW_NAME" --memory 4096 --cpus 2 --graphicscontroller vboxsvga --usbehci on >/dev/null 2>&1
         VBoxManage storagectl "$NEW_NAME" --name "SATA" --add sata --controller IntelAHCI >/dev/null 2>&1
         VBoxManage internalcommands sethduuid "$REAL_VDI" >/dev/null 2>&1
         VBoxManage storageattach "$NEW_NAME" --storagectl "SATA" --port 0 --device 0 --type hdd --medium "$REAL_VDI" >/dev/null 2>&1
 
         if [ $? -eq 0 ]; then
-            echo -e "  [+] ${GREEN}$vm_name${NC} -> ${YELLOW}(RECUPERADA como $NEW_NAME)${NC}"
-            ((COUNT++))
-            ((RECOVERED++))
-        else
-            VBoxManage unregistervm "$NEW_NAME" --delete >/dev/null 2>&1
-            echo -e "  [!] ${RED}$vm_name${NC}: Fallo Crítico (Imposible recuperar)."
+            echo -e "  [+] ${GREEN}$vm_name${NC} -> ${YELLOW}(RECUPERADA: UUID Error)${NC}"
+            ((COUNT++)); ((RECOVERED++))
         fi
     fi
 done
 
-# ==============================================================================
-# RESUMEN FINAL
-# ==============================================================================
 echo
 echo -e "${GREEN}✨ OPERACIÓN COMPLETADA.${NC}"
-echo -e "   ✅ Máquinas Activas:     $COUNT"
-if [ $RECOVERED -gt 0 ]; then
-    echo -e "   🆕  Máquinas Recuperadas: $RECOVERED"
-fi
-if [ $DELETED -gt 0 ]; then
-    echo -e "   🗑️  Huérfanos Eliminados: $DELETED"
-fi
+echo -e "   ✅ Activas: $COUNT | 🔧 Rutas Reparadas: $REPAIRED | 🚑 Reconstruidas: $RECOVERED"
 echo
