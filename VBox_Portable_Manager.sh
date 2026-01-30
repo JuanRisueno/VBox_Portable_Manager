@@ -157,6 +157,22 @@ for vbox_file in "${FOUND_VMS[@]}"; do
     fi
 done
 
+# ==============================================================================
+# FASE 4: SANITIZACIÓN DE USB (Prevención de "Name Clash")
+# ==============================================================================
+echo -e " [INFO] Normalizando controladores USB en todas las máquinas..."
+
+# Recorremos todas las máquinas registradas para apagar USBs conflictivos
+VBoxManage list vms | while read line; do
+    if [[ $line =~ \"(.*)\" ]]; then
+        current_vm="${BASH_REMATCH[1]}"
+        # Apagamos todos los controladores USB (1.1, 2.0 y 3.0)
+        VBoxManage modifyvm "$current_vm" --usb off --usbehci off --usbxhci off >/dev/null 2>&1
+    fi
+done
+echo -e " ${GREEN}[OK] USBs desactivados (Modo Seguro).${NC}"
+# ==============================================================================
+
 echo
 echo -e "${GREEN}✨ OPERACIÓN COMPLETADA.${NC}"
 echo -e "   ✅ Activas: $COUNT | 🔧 Rutas Reparadas: $REPAIRED | 🚑 Reconstruidas: $RECOVERED"
